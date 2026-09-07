@@ -1,0 +1,20 @@
+[Unit]
+Description=Headless Chrome CDP (chrome-headless-shell)
+Documentation=https://developer.chrome.com/docs/automation-and-testing/headless-chrome-shell
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Environment=HOME=/root
+Environment=CDP_PORT=9222
+Environment=CDP_ORIGIN=*
+Environment=PROFILE_DIR=/root/.cache/chrome-headless-cdp
+ExecStart=/usr/local/bin/chrome-headless about:blank
+Restart=always
+RestartSec=3
+RuntimeDirectory=chrome-headless
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
