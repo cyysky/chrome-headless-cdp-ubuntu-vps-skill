@@ -21,6 +21,20 @@ See [SKILL.md](SKILL.md) for install, verification, and CDP driving examples.
 | `scripts/chrome-headless.sh` | Launcher: starts the browser with `--remote-debugging-port=9222` |
 | `scripts/chrome-headless.service` | systemd unit template for a persistent browser |
 | `scripts/cap-tabs.mjs` | Keeps open page tabs capped (default 10) |
+| `cdp-manage/` | Optional companion module: token-authenticated HTTP API + dashboard in front of CDP |
+
+## Companion module
+
+`cdp-manage/` is an optional control plane for hosts where the browser is shared.
+CDP on `9222` has no authentication and is loopback-only, so `cdp-manage` fronts
+it with a bearer-token JSON API, a dashboard, an SSE event feed, and a tab cap.
+
+```bash
+sudo bash cdp-manage/deploy.sh   # installs, enables and starts the unit
+```
+
+See [cdp-manage/README.md](cdp-manage/README.md) for the API, configuration and
+security notes. Skip this module if you drive `9222` directly from the same host.
 
 ## Quick start
 

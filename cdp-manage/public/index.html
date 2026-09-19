@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chrome CDP manage</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --line: #2a2f3a;
+    --text: #e6e9ef;
+    --dim: #98a2b3;
+    --accent: #4c9aff;
+    --ok: #37b26c;
+    --warn: #e0a33a;
+    --bad: #e05252;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  code, pre, input, textarea, button { font-family: "Cascadia Mono", ui-monospace, Consolas, monospace; }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 5;
+  }
+  h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+  .pill { padding: 2px 9px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); color: var(--dim); font-size: 12px; }
+  .pill.ok { color: var(--ok); border-color: #1d4a30; }
+  .pill.bad { color: var(--bad); border-color: #55262a; }
+  .spacer { flex: 1; }
+  button {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 13px;
+  }
+  button:hover { border-color: var(--accent); }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  button:disabled { opacity: .45; cursor: default; }
+  input[type="text"], input[type="number"], textarea {
+    background: #0c0e12; color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 8px; font-size: 13px;
+  }
+  input:focus, textarea:focus { outline: 1px solid var(--accent); }
+  .bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .bar input[type="text"] { flex: 1; min-width: 240px; }
+  main { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(420px, 1.2fr); gap: 16px; padding: 16px; align-items: start; }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .panel h2 { margin: 0; padding: 9px 12px; font-size: 13px; font-weight: 600; background: var(--panel-2); border-bottom: 1px solid var(--line); color: var(--dim); }
+  .tab { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .tab:last-child { border-bottom: 0; }
+  .tab:hover { background: #1b1f27; }
+  .tab.sel { background: #16233a; box-shadow: inset 3px 0 0 var(--accent); }
+  .tab .meta { flex: 1; min-width: 0; }
+  .tab .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tab .url { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tab .id { color: #5c667a; font-size: 11px; }
+  .tab .actions { display: flex; gap: 4px; }
+  .tab .actions button { padding: 3px 7px; font-size: 12px; }
+  .empty { padding: 18px 12px; color: var(--dim); }
+  .detail { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row input[type="text"] { flex: 1; min-width: 180px; }
+  .label { color: var(--dim); font-size: 12px; }
+  pre { margin: 0; padding: 10px; background: #0c0e12; border: 1px solid var(--line); border-radius: 6px; max-height: 320px; overflow: auto; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  img.shot { max-width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  .toast { position: fixed; right: 16px; bottom: 16px; background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 10px 14px; max-width: 460px; font-size: 13px; }
+  .toast.err { border-left-color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Chrome CDP &middot; manage</h1>
+  <span class="pill" id="chrome">connecting</span>
+  <span class="pill" id="tabs-count">-</span>
+  <span class="spacer"></span>
+  <button id="refresh">Refresh</button>
+  <label class="label"><input type="checkbox" id="auto" checked> auto</label>
+  <button id="token-btn">Token</button>
+</header>
+
+<section class="bar">
+  <input type="text" id="new-url" placeholder="https://example.com" spellcheck="false">
+  <label class="label"><input type="checkbox" id="new-bg" checked> background</label>
+  <button id="open">Open tab</button>
+  <input type="number" id="prune-keep" value="10" min="1" max="200" style="width:4.5rem">
+  <button id="prune">Prune</button>
+  <button id="close-all" class="danger">Close all</button>
+</section>
+
+<main>
+  <section class="panel">
+    <h2>Loaded tabs</h2>
+    <div id="tabs"></div>
+  </section>
+  <section class="panel">
+    <h2 id="detail-title">Tab detail</h2>
+    <div class="detail" id="detail"><div class="empty">Select a tab to inspect what it loaded.</div></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { token: localStorage.getItem("cdpManageToken") || "", tabs: [], selected: null, detailTab: null, busy: false };
+let lastShotUrl = null;
+
+function toast(message, isError) {
+  document.querySelectorAll(".toast").forEach((n) => n.remove());
+  const node = document.createElement("div");
+  node.className = "toast" + (isError ? " err" : "");
+  node.textContent = message;
+  document.body.appendChild(node);
+  setTimeout(() => node.remove(), isError ? 8000 : 3500);
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    method: options.method || "GET",
+    headers: Object.assign({ authorization: "Bearer " + state.token }, options.body ? { "content-type": "application/json" } : {}),
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  if (res.status === 401) {
+    if (state.token) {
+      state.token = "";
+      localStorage.removeItem("cdpManageToken");
+      $("chrome").textContent = "token rejected";
+      $("chrome").className = "pill bad";
+    }
+    throw new Error("token required: click Token");
+  }
+  if (options.raw) {
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res;
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
+  return data;
+}
+
+async function blobUrl(path) {
+  const res = await api(path, { raw: true });
+  return URL.createObjectURL(await res.blob());
+}
+
+async function loadHealth() {
+  try {
+    const h = await api("/api/health");
+    $("chrome").textContent = h.chrome.browser + " @ " + h.chrome.endpoint.replace("http://", "");
+    $("chrome").className = "pill ok";
+  } catch (err) {
+    $("chrome").textContent = "unreachable: " + err.message;
+    $("chrome").className = "pill bad";
+  }
+}
+
+function shortId(id) { return id.length > 12 ? id.slice(0, 12) : id; }
+
+async function loadTabs() {
+  const data = await api("/api/tabs");
+  state.tabs = data.tabs;
+  $("tabs-count").textContent = data.tabs.length + " / " + data.max + " tabs";
+  $("prune-keep").value = data.max;
+  renderTabs();
+  if (state.selected && !state.tabs.some((t) => t.id === state.selected)) state.selected = null;
+  renderDetail();
+}
+
+function renderTabs() {
+  const root = $("tabs");
+  if (!state.tabs.length) {
+    root.innerHTML = '<div class="empty">No page targets.</div>';
+    return;
+  }
+  root.innerHTML = "";
+  for (const tab of state.tabs) {
+    const row = document.createElement("div");
+    row.className = "tab" + (tab.id === state.selected ? " sel" : "");
+    row.onclick = () => { state.selected = tab.id; renderTabs(); renderDetail(); };
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = tab.title || "(untitled)";
+    const url = document.createElement("div");
+    url.className = "url";
+    url.textContent = tab.url || "about:blank";
+    const id = document.createElement("div");
+    id.className = "id";
+    id.textContent = shortId(tab.id) + (tab.lastUsed ? "  used " + new Date(tab.lastUsed).toLocaleTimeString() : "");
+    meta.append(title, url, id);
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    for (const [label, fn, danger] of [
+      ["focus", async (e) => { e.stopPropagation(); await api("/api/tabs/" + tab.id + "/activate", { method: "POST" }); toast("focused " + shortId(tab.id)); }],
+      ["reload", async (e) => { e.stopPropagation(); await api("/api/tabs/" + tab.id + "/reload", { method: "POST", body: {} }); toast("reloaded " + shortId(tab.id)); }],
+      ["close", async (e) => { e.stopPropagation(); await api("/api/tabs/" + tab.id, { method: "DELETE" }); await loadTabs(); }, true],
+    ]) {
+      const button = document.createElement("button");
+      button.textContent = label;
+      if (danger) button.className = "danger";
+      button.onclick = (e) => fn(e).catch((err) => toast(err.message, true));
+      actions.appendChild(button);
+    }
+    row.append(meta, actions);
+    root.appendChild(row);
+  }
+}
+
+function renderDetail() {
+  const root = $("detail");
+  const tab = state.tabs.find((t) => t.id === state.selected);
+  $("detail-title").textContent = tab ? "Tab " + shortId(tab.id) : "Tab detail";
+  if (!tab) {
+    state.detailTab = null;
+    root.innerHTML = '<div class="empty">Select a tab to inspect what it loaded.</div>';
+    return;
+  }
+  const infoEl = root.querySelector(".detail-info .label");
+  if (state.detailTab === tab.id && infoEl) {
+    infoEl.textContent = tab.url || "about:blank";
+    return;
+  }
+  state.detailTab = tab.id;
+  if (lastShotUrl) {
+    URL.revokeObjectURL(lastShotUrl);
+    lastShotUrl = null;
+  }
+  root.innerHTML = "";
+
+  const info = document.createElement("div");
+  info.className = "row detail-info";
+  const infoLabel = document.createElement("span");
+  infoLabel.className = "label";
+  infoLabel.textContent = tab.url || "about:blank";
+  info.appendChild(infoLabel);
+
+  const nav = document.createElement("div");
+  nav.className = "row";
+  const navInput = document.createElement("input");
+  navInput.type = "text";
+  navInput.placeholder = "navigate to https://...";
+  navInput.value = tab.url;
+  const go = document.createElement("button");
+  go.textContent = "Go";
+  go.onclick = () => run(() => api("/api/tabs/" + tab.id + "/navigate", { method: "POST", body: { url: navInput.value } }).then(() => loadTabs()));
+  nav.append(navInput, go);
+
+  const shotRow = document.createElement("div");
+  shotRow.className = "row";
+  const full = document.createElement("label");
+  full.className = "label";
+  full.innerHTML = '<input type="checkbox" id="shot-full"> full page';
+  const width = document.createElement("input");
+  width.type = "number"; width.value = 1280; width.style.width = "5.5rem";
+  const height = document.createElement("input");
+  height.type = "number"; height.value = 800; height.style.width = "5.5rem";
+  const shot = document.createElement("button");
+  shot.textContent = "Capture";
+  shot.onclick = () => run(async () => {
+    const query = "?full=" + ($("shot-full").checked ? "1" : "0") + "&width=" + width.value + "&height=" + height.value;
+    if (lastShotUrl) URL.revokeObjectURL(lastShotUrl);
+    lastShotUrl = await blobUrl("/api/tabs/" + tab.id + "/screenshot" + query);
+    image.src = lastShotUrl;
+    image.style.display = "block";
+  });
+  shotRow.append(shot, full, width, height);
+
+  const image = document.createElement("img");
+  image.className = "shot";
+  image.style.display = "none";
+
+  const textRow = document.createElement("div");
+  textRow.className = "row";
+  const text = document.createElement("button");
+  text.textContent = "Show text";
+  const limit = document.createElement("input");
+  limit.type = "number"; limit.value = 20000; limit.style.width = "7rem";
+  const output = document.createElement("pre");
+  output.style.display = "none";
+  text.onclick = () => run(async () => {
+    const data = await api("/api/tabs/" + tab.id + "/text?limit=" + limit.value);
+    output.textContent = (data.title ? "# " + data.title + "\n" : "") + data.text + (data.truncated ? "\n\n[truncated]" : "");
+    output.style.display = "block";
+  });
+  textRow.append(text, limit);
+
+  const evalRow = document.createElement("div");
+  evalRow.className = "row";
+  const expression = document.createElement("input");
+  expression.type = "text";
+  expression.placeholder = "document.title";
+  const evaluate = document.createElement("button");
+  evaluate.textContent = "Eval";
+  const evalOut = document.createElement("pre");
+  evalOut.style.display = "none";
+  evaluate.onclick = () => run(async () => {
+    const data = await api("/api/tabs/" + tab.id + "/eval", { method: "POST", body: { expression: expression.value } });
+    evalOut.textContent = JSON.stringify(data.result, null, 2);
+    evalOut.style.display = "block";
+  });
+  evalRow.append(expression, evaluate);
+
+  root.append(info, nav, shotRow, image, textRow, output, evalRow, evalOut);
+}
+
+async function run(fn, quiet) {
+  if (state.busy) return;
+  state.busy = true;
+  try {
+    await fn();
+  } catch (err) {
+    if (!quiet) toast(err.message, true);
+  } finally {
+    state.busy = false;
+  }
+}
+
+$("refresh").onclick = () => run(() => Promise.all([loadHealth(), loadTabs()]));
+$("token-btn").onclick = () => {
+  const token = prompt("Access token for cdp-manage:", state.token);
+  if (token !== null) {
+    state.token = token.trim();
+    localStorage.setItem("cdpManageToken", state.token);
+    connectEvents();
+    run(() => Promise.all([loadHealth(), loadTabs()]));
+  }
+};
+$("open").onclick = () => run(async () => {
+  const url = $("new-url").value.trim();
+  const data = await api("/api/tabs", { method: "POST", body: { url: url || "about:blank", background: $("new-bg").checked } });
+  if (data.evicted.length) toast("evicted " + data.evicted.length + " least-recently-used tab(s)");
+  state.selected = data.tab.id;
+  $("new-url").value = "";
+  await loadTabs();
+});
+$("new-url").addEventListener("keydown", (e) => { if (e.key === "Enter") $("open").click(); });
+$("prune").onclick = () => run(async () => {
+  const data = await api("/api/tabs/prune", { method: "POST", body: { keep: Number($("prune-keep").value) } });
+  toast(data.evicted.length ? "pruned " + data.evicted.length + " tab(s)" : "nothing to prune");
+  await loadTabs();
+});
+$("close-all").onclick = () => run(async () => {
+  if (!confirm("Close every tab except the most recently used one?")) return;
+  const data = await api("/api/tabs/close-all", { method: "POST", body: {} });
+  toast("closed " + data.closed.length + " tab(s)");
+  await loadTabs();
+});
+
+let events = null;
+
+function connectEvents() {
+  if (events) {
+    events.close();
+    events = null;
+  }
+  if (!state.token) return;
+  try {
+    events = new EventSource("/api/events?token=" + encodeURIComponent(state.token));
+    for (const name of ["targetCreated", "targetDestroyed", "targetInfoChanged", "attachedToTarget", "detachedFromTarget", "disconnected"]) {
+      events.addEventListener(name, () => run(() => loadTabs()));
+    }
+  } catch (err) {
+    events = null;
+  }
+}
+
+setInterval(() => { if ($("auto").checked) run(() => loadTabs(), true); }, 5000);
+run(() => Promise.all([loadHealth(), loadTabs()]));
+connectEvents();
+</script>
+</body>
+</html>

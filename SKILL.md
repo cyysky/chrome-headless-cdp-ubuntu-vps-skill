@@ -161,6 +161,21 @@ node -e '
 
 Screenshots can be saved from `Page.captureScreenshot.data` (base64 PNG).
 
+## Optional: shared-browser control plane
+
+When several people or scripts share one browser, the raw CDP endpoint on `9222`
+has no authentication and is loopback-only. The `cdp-manage/` companion module
+fronts it with a token-authenticated JSON API, a dashboard, an SSE event feed and a
+tab cap:
+
+```bash
+sudo bash cdp-manage/deploy.sh   # prints the bearer token
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9300/api/health
+```
+
+See [cdp-manage/README.md](cdp-manage/README.md). Skip it for single-user,
+same-host automation and drive `9222` directly.
+
 ## Files
 
 | File | What it is |
@@ -168,3 +183,4 @@ Screenshots can be saved from `Page.captureScreenshot.data` (base64 PNG).
 | `scripts/chrome-headless.sh` | Standalone launcher (defaults to the headless shell under `/opt/chrome-for-testing`) |
 | `scripts/chrome-headless.service` | systemd unit so the browser stays up; template — adjust paths if launcher/binaries live elsewhere |
 | `scripts/cap-tabs.mjs` | Closes the oldest page tabs over CDP (default max 10) |
+| `cdp-manage/` | Optional token-authenticated control plane + dashboard for the shared browser |
