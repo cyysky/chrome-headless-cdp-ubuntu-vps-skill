@@ -46,6 +46,8 @@ systemctl enable --now chrome-headless
 curl -s http://127.0.0.1:9222/json/version | jq .Browser
 ```
 
-Overrides: `BROWSER_BIN`, `CDP_PORT`, `CDP_ORIGIN`, `PROFILE_DIR`. Note that
-`BROWSER` is ignored on purpose (VS Code exports it as an external-URL helper
-that rejects Chromium flags).
+Overrides: `BROWSER_BIN`, `CDP_PORT`, `CDP_ORIGIN`, `PROFILE_DIR`,
+`CHROME_UA`. Set `CHROME_UA` to a desktop Chrome UA string on sites behind
+Cloudflare: headless Chrome advertises `HeadlessChrome/<ver>`, which Turnstile
+fingerprints and answers with a challenge page. Note that `BROWSER` is ignored on
+purpose (VS Code exports it as an external-URL helper that rejects Chromium flags).

@@ -66,9 +66,13 @@ systemctl enable --now chrome-headless
 ```
 
 The launcher honors `BROWSER_BIN`, `CDP_PORT` (default 9222), `CDP_ORIGIN`
-(default `*`), and `PROFILE_DIR`. **Do not override via `BROWSER`**: VS Code
-and some desktops export `BROWSER` as an external-URL helper that rejects every
-Chromium flag (it logs `Ignoring option 'X': not supported for code.`).
+(default `*`), `PROFILE_DIR`, and `CHROME_UA`. **Do not override via `BROWSER`**:
+VS Code and some desktops export `BROWSER` as an external-URL helper that rejects
+every Chromium flag (it logs `Ignoring option 'X': not supported for code.`).
+
+Set `CHROME_UA` to a normal desktop Chrome UA string on sites behind Cloudflare:
+headless Chrome advertises `HeadlessChrome/<ver>`, which Turnstile fingerprints
+and answers with a challenge page instead of the site.
 
 ## Verify CDP is reachable
 

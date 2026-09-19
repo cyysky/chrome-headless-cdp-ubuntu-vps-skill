@@ -20,6 +20,10 @@
 #   CDP_ORIGIN    — allowed origin for the DevTools UI (default: *)
 #   PROFILE_DIR   — user data dir (default: $HOME/.cache/aimonitor-chrome)
 #
+#   CHROME_UA     user-agent override (default: unset). Headless Chrome
+#                   advertises HeadlessChrome/<ver>, which Cloudflare Turnstile
+#                   fingerprints and answers with a challenge page. Setting a
+#                   normal desktop Chrome UA string avoids that.
 # Usage:
 #   ./scripts/chrome-headless.sh                    # foreground
 #   CDP_PORT=9223 BROWSER_BIN=chromium ./scripts/chrome-headless.sh
@@ -45,6 +49,7 @@ fi
 CDP_PORT="${CDP_PORT:-9222}"
 CDP_ORIGIN="${CDP_ORIGIN:-*}"
 PROFILE_DIR="${PROFILE_DIR:-$HOME/.cache/aimonitor-chrome}"
+CHROME_UA="${CHROME_UA:-}"
 
 mkdir -p "$PROFILE_DIR"
 
@@ -52,6 +57,12 @@ case "$BROWSER_BIN" in
   *chrome-headless-shell*) HEADLESS_ARGS=() ;;
   *) HEADLESS_ARGS=(--headless=new) ;;
 esac
+
+if [ -n "$CHROME_UA" ]; then
+  UA_ARGS=(--user-agent="$CHROME_UA")
+else
+  UA_ARGS=()
+fi
 
 exec "$BROWSER_BIN" \
   "${HEADLESS_ARGS[@]}" \
@@ -64,4 +75,5 @@ exec "$BROWSER_BIN" \
   --remote-debugging-port="$CDP_PORT" \
   --remote-allow-origins="$CDP_ORIGIN" \
   --user-data-dir="$PROFILE_DIR" \
+  "${UA_ARGS[@]}" \
   "$@"
