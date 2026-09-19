@@ -82,6 +82,7 @@
   <span class="spacer"></span>
   <button id="refresh">Refresh</button>
   <label class="label"><input type="checkbox" id="auto" checked> auto</label>
+  <button id="pw-btn">Playwright URL</button>
   <button id="token-btn">Token</button>
 </header>
 
@@ -324,6 +325,13 @@ async function run(fn, quiet) {
 }
 
 $("refresh").onclick = () => run(() => Promise.all([loadHealth(), loadTabs()]));
+$("pw-btn").onclick = () => {
+  const endpoint = "ws://" + location.host + "/pw?token=" + encodeURIComponent(state.token);
+  navigator.clipboard?.writeText(endpoint).then(
+    () => toast("Playwright endpoint copied"),
+    () => prompt("Playwright endpoint:", endpoint),
+  ) ?? prompt("Playwright endpoint:", endpoint);
+};
 $("token-btn").onclick = () => {
   const token = prompt("Access token for cdp-manage:", state.token);
   if (token !== null) {

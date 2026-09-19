@@ -8,6 +8,10 @@
 // the shared browser cannot be exhausted, and can be reached over the LAN or
 // WireGuard with a bearer token.
 //
+// Playwright and other websocket CDP clients can connect to the shared browser
+// through the same token gate: chromium.connectOverCDP(
+//   "ws://<host>:<port>/pw?token=<token>").
+//
 // Zero dependencies: Node >= 22 built-ins only (http, fetch, WebSocket).
 //
 // Configuration (environment):
@@ -22,6 +26,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { connect as netConnect } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -46,6 +51,15 @@ const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_VIEWPORT = 4000;
 const MAX_FULL_HEIGHT = 20000;
+
+// Browser-level CDP relay for Playwright (chromium.connectOverCDP) and other
+// websocket clients: ws://<host>:<port>/pw?token=<token> -> the browser
+// endpoint on the CDP port. Raw byte relay, so websocket framing, masking and
+// fragmentation pass through untouched.
+const CDP_URL = new URL(CONFIG.cdpHttp);
+const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+const WS_PATHS = new Set(["/pw", "/cdp"]);
+const relays = new Set();
 
 class HttpError extends Error {
   constructor(status, message, detail) {
@@ -674,6 +688,107 @@ async function route(req, res, url) {
   return sendJson(res, 404, { error: "not found" });
 }
 
+// ---------------------------------------------------------------------------
+// Playwright relay: ws://<host>:<port>/pw?token=<token> (or /cdp) pipes raw
+// websocket bytes to the browser-level CDP endpoint, so Playwright clients and
+// other websocket CDP clients can drive the shared browser through the token gate.
+// ---------------------------------------------------------------------------
+
+function rejectUpgrade(socket, status, reason) {
+  socket.write(`HTTP/1.1 ${status} ${reason}\r\nconnection: close\r\ncontent-length: 0\r\n\r\n`);
+  socket.destroy();
+}
+
+function upstreamHandshake(upstreamUrl, key) {
+  return [
+    `GET ${upstreamUrl.pathname}${upstreamUrl.search} HTTP/1.1`,
+    `Host: ${upstreamUrl.host}`,
+    "Upgrade: websocket",
+    "Connection: Upgrade",
+    `Sec-WebSocket-Key: ${key}`,
+    "Sec-WebSocket-Version: 13",
+    "",
+    "",
+  ].join("\r\n");
+}
+
+async function proxyCdp(req, socket, head) {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  if (!WS_PATHS.has(url.pathname)) return rejectUpgrade(socket, 404, "Not Found");
+  if (!authorized(req, url)) return rejectUpgrade(socket, 401, "Unauthorized");
+
+  const key = req.headers["sec-websocket-key"];
+  if (!key) return rejectUpgrade(socket, 400, "Bad Request");
+
+  let info;
+  try {
+    info = await cdp.version();
+  } catch (err) {
+    console.error(`[cdp-manage] relay: ${err.message}`);
+    return rejectUpgrade(socket, 502, "Bad Gateway");
+  }
+  if (!info.webSocketDebuggerUrl) return rejectUpgrade(socket, 502, "Bad Gateway");
+
+  const upstreamUrl = new URL(info.webSocketDebuggerUrl);
+  const upstream = netConnect(upstreamUrl.port ? Number(upstreamUrl.port) : 80, upstreamUrl.hostname);
+  upstream.setNoDelay(true);
+  socket.setNoDelay(true);
+
+  const abort = () => {
+    relays.delete(socket);
+    upstream.destroy();
+    socket.destroy();
+  };
+  socket.on("error", abort);
+  upstream.on("error", abort);
+  socket.on("close", () => {
+    relays.delete(socket);
+    upstream.destroy();
+  });
+  upstream.on("close", () => {
+    relays.delete(socket);
+    socket.destroy();
+  });
+
+  upstream.once("connect", () => {
+    upstream.write(upstreamHandshake(upstreamUrl, randomBytes(16).toString("base64")));
+  });
+
+  let buffered = Buffer.alloc(0);
+  const onData = (chunk) => {
+    buffered = Buffer.concat([buffered, chunk]);
+    const end = buffered.indexOf("\r\n\r\n");
+    if (end === -1) {
+      if (buffered.length > 16384) abort();
+      return;
+    }
+    upstream.off("data", onData);
+    const header = buffered.subarray(0, end).toString("latin1");
+    if (!/^HTTP\/1\.[01] 101/.test(header)) {
+      console.error(`[cdp-manage] relay rejected upstream: ${header.split("\r\n")[0]}`);
+      return rejectUpgrade(socket, 502, "Bad Gateway");
+    }
+    const protocols = req.headers["sec-websocket-protocol"];
+    const lines = [
+      "HTTP/1.1 101 Switching Protocols",
+      "upgrade: websocket",
+      "connection: Upgrade",
+      `sec-websocket-accept: ${createHash("sha1").update(key + WS_GUID).digest("base64")}`,
+    ];
+    if (protocols) lines.push(`sec-websocket-protocol: ${String(protocols).split(",")[0].trim()}`);
+    socket.write(lines.join("\r\n") + "\r\n\r\n");
+
+    const extra = buffered.subarray(end + 4);
+    if (extra.length) upstream.write(extra);
+    if (head && head.length) upstream.write(head);
+    relays.add(socket);
+    console.log(`[cdp-manage] relay open ${url.pathname} -> ${upstreamUrl.host}${upstreamUrl.pathname}`);
+    socket.pipe(upstream);
+    upstream.pipe(socket);
+  };
+  upstream.on("data", onData);
+}
+
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://localhost");
   route(req, res, url).catch((err) => {
@@ -689,10 +804,19 @@ const server = createServer((req, res) => {
 server.requestTimeout = 120000;
 server.headersTimeout = 65000;
 
+server.on("upgrade", (req, socket, head) => {
+  proxyCdp(req, socket, head).catch((err) => {
+    console.error(`[cdp-manage] relay failed:`, err);
+    socket.destroy();
+  });
+});
+
 function shutdown(signal) {
   console.log(`[cdp-manage] ${signal} received, shutting down`);
   for (const res of sseClients) res.end();
   sseClients.clear();
+  for (const socket of relays) socket.destroy();
+  relays.clear();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 2000).unref();
 }

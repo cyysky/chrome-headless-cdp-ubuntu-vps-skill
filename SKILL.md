@@ -165,12 +165,16 @@ Screenshots can be saved from `Page.captureScreenshot.data` (base64 PNG).
 
 When several people or scripts share one browser, the raw CDP endpoint on `9222`
 has no authentication and is loopback-only. The `cdp-manage/` companion module
-fronts it with a token-authenticated JSON API, a dashboard, an SSE event feed and a
-tab cap:
+fronts it with a token-authenticated JSON API, a dashboard, an SSE event feed, a
+browser-level websocket for Playwright and a tab cap:
 
 ```bash
 sudo bash cdp-manage/deploy.sh   # prints the bearer token
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9300/api/health
+```
+
+```js
+const browser = await chromium.connectOverCDP(`ws://<host>:9300/pw?token=${token}`);
 ```
 
 See [cdp-manage/README.md](cdp-manage/README.md). Skip it for single-user,

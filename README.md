@@ -27,7 +27,8 @@ See [SKILL.md](SKILL.md) for install, verification, and CDP driving examples.
 
 `cdp-manage/` is an optional control plane for hosts where the browser is shared.
 CDP on `9222` has no authentication and is loopback-only, so `cdp-manage` fronts
-it with a bearer-token JSON API, a dashboard, an SSE event feed, and a tab cap.
+it with a bearer-token JSON API, a dashboard, an SSE event feed, a tab cap, and a
+browser-level websocket for Playwright (`ws://<host>:9300/pw?token=<token>`).
 
 ```bash
 sudo bash cdp-manage/deploy.sh   # installs, enables and starts the unit

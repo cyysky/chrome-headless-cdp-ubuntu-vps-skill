@@ -6,8 +6,9 @@ token-authenticated control plane in front of the headless Chrome that
 
 The CDP endpoint (`127.0.0.1:9222`) has no authentication and is bound to
 loopback, so it cannot be driven from another machine. `cdp-manage` fronts it with a
-token-authenticated JSON API, a live dashboard, an SSE event feed, and a tab cap so
-the shared browser cannot be exhausted by a runaway script.
+token-authenticated JSON API, a live dashboard, an SSE event feed, a
+browser-level websocket for Playwright, and a tab cap so the shared browser cannot
+be exhausted by a runaway script.
 
 ## Files
 
@@ -85,6 +86,27 @@ The dashboard polls the tab list every 5 s when `auto` is checked. Capture and t
 output survive those refreshes for as long as the selected tab stays selected;
 switching tabs resets the detail panel.
 
+## Playwright
+
+The token gate also fronts the browser-level CDP websocket, so Playwright can drive
+the shared browser from another machine:
+
+```js
+import { chromium } from "playwright-core";
+
+const browser = await chromium.connectOverCDP(`ws://<browser-host>:9300/pw?token=${token}`);
+const context = browser.contexts()[0];
+const page = context.pages()[0] ?? await context.newPage();
+```
+
+`/cdp` is an alias for `/pw`, and the dashboard's "Playwright URL" button copies
+the endpoint with the current token. `browser.close()` only drops the websocket; it
+does not stop the shared browser or close pages you did not create.
+
+The tab cap and LRU tracking apply to tabs opened through `/api/tabs`; pages a
+Playwright client creates directly bypass them, so reclaim with `/api/tabs/prune`
+(or the dashboard) when a script runs away.
+
 ## Configuration
 
 `/etc/cdp-manage/env` (read by the unit, mode 600):
@@ -101,6 +123,8 @@ switching tabs resets the detail panel.
 
 ## Security
 
+- The `/pw` relay hands a client the browser-level endpoint, so a token holder
+  can reach every context and page. Treat the token like full control of the browser.
 - The token is the only gate: it travels in cleartext over plain HTTP, so keep the
   listener on the LAN or WireGuard, and set `MGMT_BIND=127.0.0.1` plus
   `ssh -N -L 9300:127.0.0.1:9300 user@<browser-host>` when off-network.
